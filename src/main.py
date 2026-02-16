@@ -11,25 +11,45 @@ total = st.number_input("Tamaño total del datagrama IP (bytes)", value=4000, st
 if st.button("Fragmentar"):
     payload_total = total - header
     payload_por_fragmento = ((mtu - header) // 8) * 8
-    num_frag = math.ceil(payload_total / payload_por_fragmento)
+    if payload_total <= 0:
+        st.error("El tamaño total debe ser mayor que la cabecera IP.")
+        st.stop()
+    if payload_por_fragmento <= 0:
+        st.error("La MTU es demasiado pequeña para transportar datos con esa cabecera.")
+        st.stop()
 
-    st.write(f"Se generan **{num_frag} fragmentos**.")
+    # Construcción inicial de payloads por fragmento.
+    payloads = []
+    restante = payload_total
+    while restante > 0:
+        payload = min(payload_por_fragmento, restante)
+        payloads.append(payload)
+        restante -= payload
 
-    offset = 0
+    # Caso especial: si el ultimo fragmento es menor que 8 bytes, intentar fusionarlo
+    # con el penultimo si no se supera la MTU (cabecera + payload <= MTU).
+    if len(payloads) >= 2 and payloads[-1] < 8:
+        payload_penultimo = payloads[-2]
+        payload_ultimo = payloads[-1]
+        if header + payload_penultimo + payload_ultimo <= mtu:
+            payloads[-2] = payload_penultimo + payload_ultimo
+            payloads.pop()
+
     fragmentos = []
+    offset = 0
     total_payload = 0
     total_transmitido = 0
+    num_frag = len(payloads)
 
-    for i in range(num_frag):
-        payload = min(payload_por_fragmento, payload_total - i * payload_por_fragmento)
+    for i, payload in enumerate(payloads):
         size = payload + header
         mf = 1 if i < num_frag - 1 else 0
-
-        fragmentos.append((i+1, size, payload, mf, offset))
-
+        fragmentos.append((i + 1, size, payload, mf, offset))
         offset += payload // 8
         total_payload += payload
         total_transmitido += size
+
+    st.write(f"Se generan **{num_frag} fragmentos**.")
 
     #st.table(fragmentos)
 
@@ -78,6 +98,5 @@ if st.button("Fragmentar"):
     st.write(f"**Bytes realmente transmitidos (incluyendo cabeceras):** {total_transmitido} bytes")
 
     st.write(f"**Eficiencia = {eficiencia:.2f}%**")
-
 
 
